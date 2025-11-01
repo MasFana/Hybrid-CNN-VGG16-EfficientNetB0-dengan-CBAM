@@ -1,5 +1,7 @@
 # Hybrid-CNN-VGG16-EfficientNetB0-dengan-CBAM
-
+![Class](./class.png) 
+![Class](./metric.png) 
+![Class](./conf.png) 
 ## **Arsitektur Hybrid CNN: VGG16 + EfficientNetB0 dengan CBAM**
 **Berdasarkan Paper**
 
