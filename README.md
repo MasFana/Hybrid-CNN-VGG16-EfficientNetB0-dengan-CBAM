@@ -1,7 +1,14 @@
 # Hybrid-CNN-VGG16-EfficientNetB0-dengan-CBAM
+
 ![Class](./class.png) 
 ![Class](./metric.png) 
 ![Class](./conf.png) 
+
+![TensorFlow](https://img.shields.io/badge/TensorFlow-%23FF6F00.svg?style=for-the-badge&logo=TensorFlow&logoColor=white) 
+- [Link Model Tensorflow final_vgg_effattnnet.keras](https://1o872djuge.ufs.sh/f/hL4tjTnv9CWb1qdVYawm5SpdhJ8LGXaFcP2YIzDvusClwW1o)
+
+![PyTorch](https://img.shields.io/badge/PyTorch-%23EE4C2C.svg?style=for-the-badge&logo=PyTorch&logoColor=white)
+- [Link Model PyTorch best_model_pytorch.pth](https://1o872djuge.ufs.sh/f/hL4tjTnv9CWbiU1NOIXNk7PnwbTSjVxe0qiHWhyMLZEJplcR)
 
 ## **Arsitektur Hybrid CNN: VGG16 + EfficientNetB0 dengan Residual CBAM**
 **Berdasarkan Implementasi Code & Paper**
@@ -15,23 +22,23 @@ Rani R, Bharany S, Elkamchouchi DH, Ur Rehman A, Singh R, Hussen S. VGG-EffAttnN
 
 ```mermaid
 graph TD
-    INPUT[Input Image: 224x224x3] --> RESCALE[Rescaling 1./255]
-    RESCALE --> SPLIT{Split}
+    INPUT[Input Image: 224x224x3] --> PREPROC[Preprocessing: Normalize/Rescale]
+    PREPROC --> SPLIT{Split}
 
     subgraph "BRANCH 1: VGG16 (Fine-Tuned)"
     SPLIT --> VGG_IN[VGG16 Base]
     VGG_IN -->|Frozen Layers| VGG_CONV[Conv Blocks 1-4]
     VGG_CONV -->|Unfrozen| VGG_LAST[Block 5 Conv Layers]
-    VGG_LAST --> VGG_POOL[MaxPooling2D]
+    VGG_LAST --> VGG_POOL[AdaptiveAvgPool / MaxPool]
     VGG_POOL --> VGG_FLAT[Flatten]
-    VGG_FLAT --> VGG_DENSE[Dense 256 + ReLU]
+    VGG_FLAT --> VGG_DENSE[Linear/Dense 256 + ReLU]
     VGG_DENSE --> VGG_DROP[MC Dropout 0.3]
     end
 
     subgraph "BRANCH 2: EfficientNetB0 + CBAM"
     SPLIT --> EFF_IN[EfficientNetB0 Base]
     EFF_IN -->|Frozen Layers| EFF_BLOCKS[Stem + Early Blocks]
-    EFF_BLOCKS -->|Unfrozen| EFF_LAST[Top 20 Layers]
+    EFF_BLOCKS -->|Unfrozen| EFF_LAST[Top Block / Last Layers]
     EFF_LAST --> EFF_FEAT[Features: 7x7x1280]
     
     EFF_FEAT --> CBAM_IN[CBAM Block]
@@ -41,7 +48,7 @@ graph TD
     
     EFF_FEAT --> ADD((+))
     CBAM_OUT --> ADD
-    ADD -->|Residual Connection| EFF_GAP[Global Avg Pooling]
+    ADD -->|Residual Connection| EFF_GAP["AdaptiveAvgPool (GAP)"]
     EFF_GAP --> EFF_DROP[MC Dropout 0.3]
     end
 
@@ -49,9 +56,9 @@ graph TD
     EFF_DROP --> CONCAT
     
     subgraph "HEAD: Fusion & Classification"
-    CONCAT -->|Shape: 1536| FUS_DENSE[Dense 256 + ReLU]
+    CONCAT -->|Shape: 1536| FUS_DENSE[Linear/Dense 256 + ReLU]
     FUS_DENSE --> FUS_DROP[MC Dropout 0.3]
-    FUS_DROP --> OUTPUT[Dense 6 + Softmax]
+    FUS_DROP --> OUTPUT[Linear/Dense 6 + Softmax/Logits]
     end
 ```
 
@@ -60,7 +67,8 @@ graph TD
 #### **Input Processing**
 - **Dimensi Input**: 224×224×3 (RGB)
 - **Preprocessing**: 
-  - `Rescaling`: Normalisasi nilai piksel sederhana (1./255) menggunakan `ImageDataGenerator`.
+  - **PyTorch**: Normalisasi ImageNet (`mean=[0.485, 0.456, 0.406]`, `std=[0.229, 0.224, 0.225]`).
+  - **TensorFlow**: Rescaling standar `1./255`.
 
 #### **Dual-Branch Feature Extraction**
 
@@ -68,94 +76,94 @@ graph TD
 - **Base Model**: VGG16 (ImageNet Weights).
 - **Fine-Tuning Strategy**: 
   - Layer awal dibekukan (Frozen).
-  - **4 Layer Terakhir** di-unfreeze untuk melatih fitur spesifik penyakit cabai.
+  - **4 Layer Konvolusi Terakhir** di-unfreeze untuk melatih fitur spesifik.
 - **Flow**:
   ```
-  Input → VGG16 Base → (7,7,512) → Flatten → Dense(256) → MC Dropout(0.3)
+  Input → VGG16 Features → AdaptiveAvgPool(7x7) → Flatten → Linear(256) → MC Dropout(0.3)
   ```
 
 **Branch 2 - EfficientNetB0 + Residual CBAM (Detail Focus):**
 - **Base Model**: EfficientNetB0 (ImageNet Weights).
 - **Fine-Tuning Strategy**:
   - Layer awal dibekukan.
-  - **20 Layer Terakhir** di-unfreeze.
+  - **Blok Terakhir (Top Block)** di-unfreeze.
 - **Attention Mechanism**: 
-  - Menggunakan modul CBAM (Convolutional Block Attention Module) kustom.
+  - Menggunakan modul CBAM (Convolutional Block Attention Module).
   - **Residual Connection**: Output asli EfficientNet ditambahkan (+) dengan output CBAM untuk mencegah degradasi gradien.
 - **Flow**:
   ```
-  Input → EfficientNet Base → (7,7,1280) → [CBAM + Residual] → GAP → MC Dropout(0.3)
+  Input → EfficientNet Features → (7,7,1280) → [CBAM + Residual] → GAP → Flatten → MC Dropout(0.3)
   ```
 
 #### **CBAM Block Configuration**
-Implementasi sesuai fungsi `cbam_block(x)` pada kode:
+Implementasi modul atensi kustom:
 1.  **Channel Attention**:
-    - Menggunakan *Shared MLP* dengan `ratio=8`.
-    - Menggabungkan `GlobalAvgPool` dan `GlobalMaxPool`.
+    - Menggabungkan `AvgPool` dan `MaxPool` (Global).
+    - Shared MLP dengan `ratio=8`.
     - Activation: Sigmoid.
 2.  **Spatial Attention**:
     - Menggabungkan `Mean` dan `Max` pooling sepanjang axis channel.
-    - Menggunakan `Conv2D` dengan kernel **7x7**.
+    - Menggunakan Konvolusi kernel **7x7**.
     - Activation: Sigmoid.
 
 #### **Feature Fusion & Output**
-Penggabungan fitur dilakukan dengan metode *Late Fusion* (Concatenation) dari kedua branch yang telah melalui proses dropout.
+Penggabungan fitur dilakukan dengan metode *Late Fusion* (Concatenation).
 
 ```
 [VGG Feature (256)] ⊕ [EfficientNet Feature (1280)] 
           ↓
 Concatenate Layer (Total: 1536 features)
           ↓
-Dense(256, Activation='relu')
+Linear/Dense(256, Activation='relu')
           ↓
 MC Dropout (Rate 0.3)
           ↓
-Output Layer (Dense 6, Activation='softmax')
+Output Layer (Linear/Dense 6)
 ```
 
-### **Spesifikasi Teknis Berdasarkan Model Summary**
+### **Spesifikasi Teknis**
 
 #### **Dimensional Flow**
 ```
-Input Image: (224, 224, 3)
+Input Image: (Batch, 3, 224, 224)
     ↓
 ├── VGG16 Path:
-│   └── Output Tensor: (None, 256)
-│       (Dari Flatten → Dense 256)
+│   └── Output Tensor: (Batch, 256)
+│       (Flatten dari 512*7*7 → Linear 256)
 │
 ├── EfficientNetB0 Path:
-│   ├── Base Output: (None, 7, 7, 1280)
-│   ├── CBAM Process: (None, 7, 7, 1280)
-│   └── GAP Output: (None, 1280)
+│   ├── Base Output: (Batch, 1280, 7, 7)
+│   ├── CBAM Process: (Batch, 1280, 7, 7)
+│   └── GAP + Flatten: (Batch, 1280)
 │
 └── Concatenation:
-    └── (None, 256) + (None, 1280) → (None, 1536)
+    └── (Batch, 256) + (Batch, 1280) → (Batch, 1536)
     
 Classification Head:
-    └── (None, 1536) → Dense(256) → Output(6)
+    └── (Batch, 1536) → Linear(256) → Output(6)
 ```
 
 #### **Key Implementation Details**
 
 1.  **MC Dropout (Monte Carlo Dropout)**:
-    - Menggunakan class custom `MCDropout` yang tetap aktif saat *inference* (`training=True`).
-    - Memungkinkan estimasi ketidakpastian (uncertainty estimation) saat prediksi.
-    - Rate: 0.3 di semua layer dropout.
+    - Menggunakan class custom `MCDropout`.
+    - Dropout tetap aktif saat evaluasi/testing (`training=True`/`train()`) untuk estimasi ketidakpastian.
+    - Rate: 0.3.
 
 2.  **Residual Learning pada Attention**:
-    - Berbeda dengan implementasi standar, model ini menggunakan `layers.Add()` antara fitur asli EfficientNet dan fitur hasil CBAM.
-    - Kode: `eff_refined = layers.Add()([eff_features, eff_attn_features])`.
+    - Fitur asli ditambahkan kembali ke fitur hasil atensi: `x + attention(x)`.
 
 3.  **Optimization**:
-    - Optimizer: Adam (`learning_rate=0.0001`).
-    - Loss: Categorical Crossentropy.
-    - Callbacks: EarlyStopping (Patience 5) dan ModelCheckpoint (Save Best Only).
+    - **Optimizer**: Adam (`lr=0.0001`).
+    - **Loss Function**: CrossEntropyLoss (PyTorch) / Categorical Crossentropy (TF).
+    - **Callbacks**: EarlyStopping (Patience 5) dan menyimpan model terbaik (Best Weights).
 
-### **Keunggulan Arsitektur Code Ini**
+### **Keunggulan Arsitektur Ini**
 
-1.  **Residual Attention**: Penambahan *skip connection* pada blok CBAM memastikan fitur asli dari EfficientNet tidak hilang jika atensi gagal mempelajari fitur yang relevan, serta mempercepat konvergensi.
-2.  **Uncertainty Estimation**: Penggunaan MC Dropout memungkinkan model memberikan tingkat kepercayaan (confidence) yang lebih realistis pada data test, bukan sekadar probabilitas softmax.
-3.  **Complementary Features**:
-    - VGG16 menyediakan fitur tekstur dan bentuk global yang kuat (via Flatten).
-    - EfficientNet menyediakan fitur detail semantik yang efisien (via GAP).
-4.  **Efficient Parameter Usage**: Dengan membekukan sebagian besar layer awal (Transfer Learning), model fokus melatih layer tingkat tinggi dan modul atensi, mengurangi risiko overfitting pada dataset cabai.
+1.  **Residual Attention**: Skip connection pada blok CBAM menjaga aliran informasi fitur asli dan mempercepat konvergensi.
+2.  **Complementary Features**:
+    - VGG16 menangkap fitur bentuk dan tekstur global.
+    - EfficientNet menangkap detail semantik yang kompleks dengan efisiensi parameter.
+3.  **Robustness**: Penggunaan augmentasi data (Rotation, Flip, ColorJitter) dan MC Dropout mengurangi overfitting pada dataset terbatas.
+
+![](model_torchviz.png)
