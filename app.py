@@ -30,7 +30,7 @@ st.markdown("""
 
 CLASS_NAMES = [
     "Bacterial Spot", "Cercospora Leaf Spot", "Curl Virus", 
-    "Healthy Leaf", "Nutrition Deficiency", "White spot"
+    "Healthy Leaf", "Nutrition Deficiency", "White Spot"
 ]
 
 # Dictionary Saran Penanganan
